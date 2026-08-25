@@ -30,7 +30,8 @@ GLOBAL_SYMB = [
 @stock_router.get("/ng")
 async def get_ng_stocks(redis: redis_dependency):
     """Get stock data from the API"""
-    return await get_ng_stock_data(redis=redis)
+    result = await get_ng_stock_data(redis=redis)
+    return result["EQUITIES"] if "EQUITIES" in result else result
 
 
 @stock_router.get("/global")
