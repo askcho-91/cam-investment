@@ -1,0 +1,19 @@
+[project]
+name = "askcho-investment"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "dotenv>=0.9.9",
+    "fastapi[standard]>=0.141.1",
+    "redis>=8.1.0",
+    "uvicorn>=0.52.4",
+]
+
+[project.scripts]
+askcho-investment = "askcho_investment:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
