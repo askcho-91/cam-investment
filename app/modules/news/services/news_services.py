@@ -30,20 +30,9 @@ async def get_global_news(redis: redis_dependency, category: CategoryEnum) -> li
             response = await client.get(f"{FINNHUB_API_URL}/news?category={category.value}&token={FINNHUB_API_KEY}")
             response.raise_for_status()
             raw_data = response.json()
-            print(f"Fetched {len(raw_data)} news articles for category '{category.value}' from Finnhub API.")
-            formatted_data = []
-            for news in raw_data:
-                formatted_news = {
-                    "headline": news.get("headline"),
-                    "source": news.get("source"),
-                    "url": news.get("url"),
-                    "summary": news.get("summary"),
-                    "datetime": news.get("datetime"),
-                }
-                formatted_data.append(formatted_news)
             
-            await redis.setex(f"finnhub_news_data:{category.value}", 60 * 30, json.dumps(formatted_data))
-            return formatted_data
+            await redis.setex(f"finnhub_news_data:{category.value}", 60 * 30, json.dumps(raw_data)) 
+            return raw_data
         except httpx.HTTPStatusError as e:
             return {"error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
