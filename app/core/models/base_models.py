@@ -42,6 +42,8 @@ class BaseModel:
                 self.updated_at = datetime.now(UTC)
             if kwargs.get("id", None) is None:
                 self.id = str(uuid.uuid4())
+            if kwargs.get("auth_user_id", None) is None:
+                self.auth_user_id = str(uuid.uuid4())
         else:
             self.id = str(uuid.uuid4())
             self.created_at = datetime.now(UTC)
@@ -58,6 +60,15 @@ class BaseModel:
             new_dict["created_at"] = new_dict["created_at"].strftime(time)
         if "updated_at" in new_dict:
             new_dict["updated_at"] = new_dict["updated_at"].strftime(time)
+
+        if "auth_user_id" in new_dict and isinstance(
+            new_dict["auth_user_id"], uuid.UUID
+        ):
+            new_dict["auth_user_id"] = str(new_dict["auth_user_id"])
+
+        if "id" in new_dict and isinstance(new_dict["id"], uuid.UUID):
+            new_dict["id"] = str(new_dict["id"])
+
         new_dict["__class__"] = self.__class__.__name__
 
         return new_dict

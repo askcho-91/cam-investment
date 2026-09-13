@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from app.core.models.base_models import Base
+from app.core import models  # noqa: F401
 from alembic import context
 
 

@@ -5,8 +5,9 @@ from fastapi import HTTPException, status
 auth = Auth()
 
 
-
-def login_user(passwordless : bool = False, email : str = None, password : str | None = None):
+def login_user(
+    passwordless: bool = False, email: str = None, password: str | None = None
+):
     """Logs in a user using the Supabase client."""
     try:
         if passwordless:
@@ -27,6 +28,7 @@ async def create_user(email: str, password: str) -> User:
     except Exception as e:
         raise Exception(f"{str(e)}")
 
+
 def refresh_token(refresh_token: str) -> User:
     """Refreshes the user's authentication token using the Auth service."""
     try:
@@ -38,3 +40,12 @@ def refresh_token(refresh_token: str) -> User:
             detail=f"Failed to refresh token: {str(e)}",
         )
 
+
+def request_password_reset(email: str) -> None:
+    try:
+        auth.reset_password(email=email)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to start password reset",
+        ) from exc

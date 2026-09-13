@@ -5,7 +5,7 @@ from app.core.dependencies import redis_dependency
 import json
 from logging import getLogger
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # load_dotenv()
@@ -29,19 +29,20 @@ def get_market_ttl(market_type="us"):
     During market hours: short TTL (30s for frequent updates)
     During off-hours: long TTL (4 hours since data won't change)
     """
-    now = datetime.now()
-    is_weekday = now.weekday() < 5  # Monday=0, Friday=4
+    # now = datetime.now()
+    # is_weekday = now.weekday() < 5  # Monday=0, Friday=4
 
-    if market_type == "ngx":
-        local_time = now.astimezone(LAGOS_TZ)
-        market_hour = local_time.hour + local_time.minute / 60
-        is_open = is_weekday and NGX_OPEN <= market_hour < NGX_CLOSE
-        return 30 if is_open else 14400  # 30s during hours, 4 hours off-hours
-    else:  # US markets
-        local_time = now.astimezone(ET_TZ)
-        market_hour = local_time.hour + local_time.minute / 60
-        is_open = is_weekday and US_OPEN <= market_hour < US_CLOSE
-        return 30 if is_open else 14400  # 30s during hours, 4 hours off-hours
+    # if market_type == "ngx":
+    #     local_time = now.astimezone(LAGOS_TZ)
+    #     market_hour = local_time.hour + local_time.minute / 60
+    #     is_open = is_weekday and NGX_OPEN <= market_hour < NGX_CLOSE
+    #     return 30 if is_open else 14400  # 30s during hours, 4 hours off-hours
+    # else:  # US markets
+    #     local_time = now.astimezone(ET_TZ)
+    #     market_hour = local_time.hour + local_time.minute / 60
+    #     is_open = is_weekday and US_OPEN <= market_hour < US_CLOSE
+    #     return 30 if is_open else 14400  # 30s during hours, 4 hours off-hours
+    return 6000
 
 
 NG_STOCK_API_URL = getenv("NG_STOCK_API_URL")
@@ -101,6 +102,10 @@ async def get_ng_indices(redis: redis_dependency):
             headers={"Authorization": f"Bearer {NGN_MARKET_API_KEY}"},
         )
         response.raise_for_status()
+        if response.status_code != 200:
+            return {
+                "error": f"HTTP error occurred: {response.status_code} - {response.text}"
+            }
         raw_data = response.json().get("data", {}).get("data", [])
         await redis.setex("ng_indices", get_market_ttl("ngx"), json.dumps(raw_data))
         return raw_data
@@ -159,24 +164,113 @@ async def get_multiple_finnhub_stock_data(
             return {"error": f"Request error occurred: {str(e)}"}
 
 
-async def get_ngn_movers(redis: redis_dependency):
-
-    result = await redis.get("ngx_movers")
+async def get_stock_data_by_symbol(symbol: str, redis: redis_dependency) -> dict:
+    symbol = symbol.strip().upper()
+    if not symbol:
+        return {"error": "Symbol is required"}
+    result = await redis.get(f"finnhub_stock_data:{symbol}")
     if result:
         return json.loads(result)
 
     async with httpx.AsyncClient() as client:
-        headers = {"Authorization": f"Bearer {NGN_MARKET_API_KEY}"}
-        query_params = {"limit": 10}
+        try:
+            response = await client.get(
+                f"{FINNHUB_API_URL}/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
+            )
+            response.raise_for_status()
+            raw_data = response.json()
+            if not raw_data.get("c"):
+                return {"error": "Stock quote not found"}
+            formatted_data = {
+                "symbol": symbol,
+                "current_price": raw_data.get("c"),
+                "change": raw_data.get("d"),
+                "percent_change": raw_data.get("dp"),
+                "high_price": raw_data.get("h"),
+                "low_price": raw_data.get("l"),
+                "open_price": raw_data.get("o"),
+                "previous_close": raw_data.get("pc"),
+                "timestamp": raw_data.get("t"),
+            }
+            await redis.setex(
+                f"finnhub_stock_data:{symbol}",
+                get_market_ttl("us"),
+                json.dumps(formatted_data),
+            )
+            return formatted_data
+        except httpx.HTTPStatusError as e:
+            return {
+                "error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"
+            }
+        except httpx.RequestError as e:
+            return {"error": f"Request error occurred: {str(e)}"}
 
-        logging.info(f"Fetching NGX movers data from API...{headers} {query_params}")
 
-        response = await client.get(f"{NGN_MARKET_API_URL}/blog/posts", headers=headers)
-        response.raise_for_status()
-        raw_data = response.json()
+async def get_global_company_news(symbol: str, redis: redis_dependency) -> list[dict]:
+    symbol = symbol.strip().upper()
+    result = await redis.get(f"finnhub_company_news:{symbol}")
+    if result:
+        return json.loads(result)
 
-        await redis.setex("ngx_movers", get_market_ttl("ngx"), json.dumps(raw_data))
-        return raw_data
+    async with httpx.AsyncClient() as client:
+        try:
+            today = datetime.now().date()
+            start = today - timedelta(days=30)
+            response = await client.get(
+                f"{FINNHUB_API_URL}/company-news",
+                params={
+                    "symbol": symbol,
+                    "from": start.isoformat(),
+                    "to": today.isoformat(),
+                    "token": FINNHUB_API_KEY,
+                },
+            )
+            response.raise_for_status()
+            raw_data = response.json()
+            normalized = [
+                {
+                    "id": item.get("id") or item.get("datetime"),
+                    "headline": item.get("headline"),
+                    "source": item.get("source"),
+                    "url": item.get("url"),
+                    "summary": item.get("summary"),
+                    "image": item.get("image"),
+                    "datetime": item.get("datetime"),
+                }
+                for item in raw_data
+                if item.get("headline") and item.get("url")
+            ]
+            await redis.setex(
+                f"finnhub_company_news:{symbol}",
+                60 * 60 * 24,  # Cache for 24 hours
+                json.dumps(normalized),
+            )
+            return normalized
+        except httpx.HTTPStatusError as e:
+            return {
+                "error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"
+            }
+        except httpx.RequestError as e:
+            return {"error": f"Request error occurred: {str(e)}"}
+
+
+async def get_ngn_movers(redis: redis_dependency):
+
+    stocks = await get_ng_stock_data(redis=redis)
+
+    sorted_by_change = sorted(
+        stocks.get("EQUITIES", []),
+        key=lambda x: x.get("percent_change", 0),
+        reverse=True,
+    )
+
+    formated_top_movers = {
+        "top_gainers": sorted_by_change[:10],
+        "top_losers": sorted_by_change[-10:],
+    }
+    logging.info("Computed NGX movers: %s", len(formated_top_movers["top_gainers"]))
+
+    return formated_top_movers
 
 
 async def get_global_movers(redis: redis_dependency):
@@ -195,6 +289,11 @@ async def get_global_movers(redis: redis_dependency):
             )
             response.raise_for_status()
             raw_data = response.json()
+
+            if response.status_code != 200:
+                return {
+                    "error": f"HTTP error occurred: {response.status_code} - {response.text}"
+                }
 
             await redis.setex(
                 "global_movers", get_market_ttl("us"), json.dumps(raw_data)

@@ -1,7 +1,7 @@
 from logging import getLogger
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.core.dependencies import redis_dependency
 from app.modules.markets.services import (
@@ -11,6 +11,7 @@ from app.modules.markets.services import (
     forex_service,
     indices_service,
     mutual_fund_service,
+    search_service,
 )
 
 logger = getLogger(__name__)
@@ -49,7 +50,8 @@ async def get_forex(
 async def get_crypto(
     redis: redis_dependency,
     coins: Optional[str] = Query(
-        None, description="Comma-separated CoinGecko ids, e.g. 'bitcoin,ethereum'. Defaults to a curated list."
+        None,
+        description="Comma-separated CoinGecko ids, e.g. 'bitcoin,ethereum'. Defaults to a curated list.",
     ),
     vs_currency: str = "usd",
 ):
@@ -85,12 +87,15 @@ async def get_commodities(
 async def get_etfs(
     redis: redis_dependency,
     symbols: Optional[str] = Query(
-        None, description="Comma-separated ETF tickers, e.g. 'SPY,QQQ'. Defaults to a curated list."
+        None,
+        description="Comma-separated ETF tickers, e.g. 'SPY,QQQ'. Defaults to a curated list.",
     ),
 ):
     """Get ETF quotes."""
     try:
-        return await etf_service.get_etf_quotes(redis=redis, symbols=_split_csv(symbols))
+        return await etf_service.get_etf_quotes(
+            redis=redis, symbols=_split_csv(symbols)
+        )
     except Exception as e:
         logger.error(f"An error occurred while fetching ETF quotes: {str(e)}")
         return {"error": f"An error occurred: {str(e)}"}
@@ -100,7 +105,8 @@ async def get_etfs(
 async def get_mutual_funds(
     redis: redis_dependency,
     symbols: Optional[str] = Query(
-        None, description="Comma-separated mutual fund tickers. Defaults to a small curated list."
+        None,
+        description="Comma-separated mutual fund tickers. Defaults to a small curated list.",
     ),
 ):
     """Get mutual fund NAVs."""
@@ -121,3 +127,39 @@ async def get_indices(redis: redis_dependency):
     except Exception as e:
         logger.error(f"An error occurred while fetching indices: {str(e)}")
         return {"error": f"An error occurred: {str(e)}"}
+
+
+@markets_router.get("/search")
+async def search_market(
+    redis: redis_dependency,
+    q: str = Query(
+        ..., min_length=1, description="Search text - a ticker or company/coin name"
+    ),
+    asset_type: str = Query(
+        "stock",
+        description="'stock', 'etf', or 'crypto'. Stocks and ETFs share the same Finnhub search.",
+    ),
+):
+    """
+    Live symbol search. Returns matches only - it does NOT return prices;
+    fetch quotes for the matched tickers/ids separately (via /stocks/global,
+    /market/global/etfs, or /market/global/crypto with a symbols/coins
+    override) once the user picks a result.
+
+    NG-listed stocks aren't covered - that data source doesn't expose a
+    search endpoint. Filter the already-fetched NG stock list client-side instead.
+    """
+    normalized_type = asset_type.strip().lower()
+    if normalized_type not in {"stock", "etf", "crypto"}:
+        raise HTTPException(
+            status_code=400, detail="asset_type must be stock, etf, or crypto"
+        )
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Search query cannot be blank")
+    try:
+        return await search_service.search(query=q, asset_type=normalized_type)
+    except Exception as e:
+        logger.error(f"An error occurred while searching: {str(e)}")
+        raise HTTPException(
+            status_code=502, detail="Market search provider unavailable"
+        ) from e

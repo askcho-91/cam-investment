@@ -9,6 +9,10 @@ class LoginSchema(BaseModel):
         json_schema_extra = {
             "example": {
                 "email": "israelinene91@gmail.com",
-                "password": "securepassword"
+                "password": "securepassword",
             }
         }
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr = Field(..., description="The user's email address")

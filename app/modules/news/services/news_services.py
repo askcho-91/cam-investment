@@ -34,8 +34,7 @@ class NGXCategoryEnum(str, enum.Enum):
     product_updates = "product-updates"
 
 
-async def get_ng_stock_data(redis: redis_dependency):
-    pass
+
 
 
 async def get_global_news(

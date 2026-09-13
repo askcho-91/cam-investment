@@ -1,4 +1,6 @@
 from app.modules.auth.services import create_user as auth_create_user
+from sqlalchemy import select
+
 from app.core.models import User
 from app.modules.users.schemas import CreateUserSchema, UpdateUserSchema
 from app.core.dependencies import db_dependency
@@ -9,19 +11,20 @@ async def create_user(user_data: CreateUserSchema, db: db_dependency):
     # Create user in the authentication system
     auth_user_id = None
     try:
-        auth_user = await auth_create_user(email=user_data.email, password=user_data.password)
+        auth_user = await auth_create_user(
+            email=user_data.email, password=user_data.password
+        )
 
         if not auth_user:
             raise Exception("Failed to create user")
         auth_user_id = auth_user.id
-    
 
         # Create user in the database
         new_user = User(
             email=user_data.email,
             first_name=user_data.first_name,
             last_name=user_data.last_name,
-            auth_id=auth_user_id
+            auth_user_id=auth_user_id,
         )
 
         db.add(new_user)
@@ -31,6 +34,22 @@ async def create_user(user_data: CreateUserSchema, db: db_dependency):
 
         return new_user
     except Exception as e:
-            raise Exception(f"{str(e)}")
+        raise Exception(f"{str(e)}")
 
 
+async def update_user(
+    user: User, user_data: UpdateUserSchema, db: db_dependency
+) -> User:
+    result = await db.execute(select(User).where(User.id == user.id))
+    stored_user = result.scalar_one_or_none()
+    if not stored_user:
+        raise ValueError("User not found")
+
+    changes = user_data.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        if value is not None:
+            setattr(stored_user, field, value.strip())
+
+    await db.commit()
+    await db.refresh(stored_user)
+    return stored_user

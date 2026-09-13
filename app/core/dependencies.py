@@ -3,7 +3,7 @@ from redis.asyncio import Redis
 from fastapi import Depends, Request, HTTPException
 from fastapi.security import HTTPBearer
 from typing import Annotated
-from .auth import verify_auth_jwt
+from .auth import verify_firebase_jwt
 from .models import User
 from sqlalchemy import select
 from json import loads, dumps
@@ -12,6 +12,7 @@ security = HTTPBearer()
 
 from .db_config import async_session
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 async def get_redis() -> Redis:
     """
@@ -40,9 +41,10 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 
-
 async def get_current_user(
-    request: Request, db: AsyncSession = Depends(get_db), redis: Redis = Depends(get_redis)
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> User:
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
@@ -51,24 +53,40 @@ async def get_current_user(
     token = auth_header.split(" ")[1]
 
     try:
-        payload = verify_auth_jwt(token)
-        auth_user_id = payload["sub"]
+        identity = verify_firebase_jwt(token)
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-    cached_user = await redis.get(f"user:{auth_user_id}")  
-
+    cache_key = f"user:{identity['provider']}:{identity['provider_id']}"
+    cached_user = await redis.get(cache_key)
     if cached_user:
         return User(**loads(cached_user))
 
-    curent_user = await db.execute(select(User).where(User.auth_user_id == auth_user_id))
-    user = curent_user.scalars().first()
+    # 1. Try direct match on the new identity
+    result = await db.execute(
+        select(User).where(
+            User.auth_provider == identity["provider"],
+            User.auth_provider_id == identity["provider_id"],
+        )
+    )
+    user = result.scalars().first()
+
+    # 2. Not found — check if this email exists from the old Supabase flow, and link it
+    if not user:
+        new_user = User(
+            email=identity["email"],
+            auth_provider=identity["provider"],
+            auth_provider_id=identity["provider_id"],
+        )
+        db.add(new_user)
+        await db.commit()
+        await db.refresh(new_user)
+        user = new_user
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    await redis.setex(f"user:{auth_user_id}", 3600, dumps(user.json_data()))  # Cache for 1 hour
-
+    await redis.setex(cache_key, 3600, dumps(user.json_data()))
     return user
 
 

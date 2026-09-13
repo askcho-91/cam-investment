@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from app.core.dependencies import redis_dependency
 from app.modules.stocks.services import stock_services
 from logging import getLogger
@@ -56,11 +56,37 @@ async def get_ng_etps(redis: redis_dependency):
 
 
 @stock_router.get("/global")
-async def get_global_stocks(redis: redis_dependency):
+async def get_global_stocks(redis: redis_dependency, symbols: str | None = None):
     """Get stock data from the API"""
-    return await stock_services.get_multiple_finnhub_stock_data(
-        redis=redis, symbols=GLOBAL_SYMB
+    requested_symbols = (
+        [symbol.strip().upper() for symbol in symbols.split(",") if symbol.strip()]
+        if symbols
+        else GLOBAL_SYMB
     )
+    return await stock_services.get_multiple_finnhub_stock_data(
+        redis=redis, symbols=requested_symbols
+    )
+
+
+@stock_router.get("/global/{symbol}")
+async def get_global_stock(symbol: str, redis: redis_dependency):
+    """Get stock data from the API"""
+    result = await stock_services.get_stock_data_by_symbol(redis=redis, symbol=symbol)
+    if result.get("error") or result.get("current_price") is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Global stock not found"
+        )
+    return result
+
+
+@stock_router.get("/global/{symbol}/news")
+async def get_global_stock_news(symbol: str, redis: redis_dependency):
+    result = await stock_services.get_global_company_news(redis=redis, symbol=symbol)
+    if isinstance(result, dict) and result.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="Company news unavailable"
+        )
+    return result
 
 
 @market_router.get("/ng/movers")

@@ -200,7 +200,6 @@ class Auth:
     def passwordless_login(self, email: str) -> None:
         """Sends a passwordless login email to the user using the Supabase client."""
         try:
-            print(f"Attempting passwordless login for email: {email}")
             response = self._client.auth.sign_in_with_otp(
                 {
                     "email": email,
