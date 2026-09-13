@@ -17,11 +17,7 @@ import logging
 
 load_dotenv()
 
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:3000").split(",")
-    if origin.strip()
-]
+
 
 app = FastAPI()
 
@@ -32,7 +28,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
 )
 
 app.include_router(auth_router)
