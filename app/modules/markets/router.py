@@ -20,14 +20,14 @@ logger = getLogger(__name__)
 # include both routers on your FastAPI app; FastAPI merges routes that
 # share a prefix. Rename this prefix if you'd rather keep them fully
 # separate.
-markets_router = APIRouter(prefix="/market/global", tags=["Market"])
+markets_router = APIRouter(prefix="/market", tags=["Market"])
 
 
 def _split_csv(value: Optional[str]) -> Optional[list[str]]:
     return [item.strip() for item in value.split(",")] if value else None
 
 
-@markets_router.get("/forex")
+@markets_router.get("/global/forex")
 async def get_forex(
     redis: redis_dependency,
     pairs: Optional[str] = Query(
@@ -45,8 +45,17 @@ async def get_forex(
         logger.error(f"An error occurred while fetching forex rates: {str(e)}")
         return {"error": f"An error occurred: {str(e)}"}
 
+@markets_router.get("/ng/forex/")
+async def get_forex(
+    redis: redis_dependency
+):
+    try:
+        return await forex_service.get_ngn_forex_pair(redis)
+    except Exception as e:
+        logger.error(f"An error occurred while fetching forex rates: {str(e)}")
+        return {"error": f"An error occurred: {str(e)}"}
 
-@markets_router.get("/crypto")
+@markets_router.get("/global/crypto")
 async def get_crypto(
     redis: redis_dependency,
     coins: Optional[str] = Query(
@@ -65,7 +74,7 @@ async def get_crypto(
         return {"error": f"An error occurred: {str(e)}"}
 
 
-@markets_router.get("/commodities")
+@markets_router.get("/global/commodities")
 async def get_commodities(
     redis: redis_dependency,
     commodities: Optional[str] = Query(
@@ -83,7 +92,7 @@ async def get_commodities(
         return {"error": f"An error occurred: {str(e)}"}
 
 
-@markets_router.get("/etfs")
+@markets_router.get("/global/etfs")
 async def get_etfs(
     redis: redis_dependency,
     symbols: Optional[str] = Query(
@@ -101,7 +110,7 @@ async def get_etfs(
         return {"error": f"An error occurred: {str(e)}"}
 
 
-@markets_router.get("/mutual-funds")
+@markets_router.get("/global/mutual-funds")
 async def get_mutual_funds(
     redis: redis_dependency,
     symbols: Optional[str] = Query(
@@ -119,7 +128,7 @@ async def get_mutual_funds(
         return {"error": f"An error occurred: {str(e)}"}
 
 
-@markets_router.get("/indices")
+@markets_router.get("/global/indices")
 async def get_indices(redis: redis_dependency):
     """Get major global index levels, tracked via their ETF proxies."""
     try:
@@ -129,7 +138,7 @@ async def get_indices(redis: redis_dependency):
         return {"error": f"An error occurred: {str(e)}"}
 
 
-@markets_router.get("/search")
+@markets_router.get("/global/search")
 async def search_market(
     redis: redis_dependency,
     q: str = Query(

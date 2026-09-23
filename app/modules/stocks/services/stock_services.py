@@ -49,6 +49,7 @@ NG_STOCK_API_URL = getenv("NG_STOCK_API_URL")
 FINNHUB_API_URL = getenv("FINNHUB_API_URL")
 FINNHUB_API_KEY = getenv("FINNHUB_API_KEY")
 
+
 NGN_MARKET_API_URL = getenv("NGN_MARKET_API_URL")
 NGN_MARKET_API_KEY = getenv("NGN_MARKET_API_KEY")
 
@@ -90,6 +91,7 @@ async def get_ng_stock_data(redis: redis_dependency):
             }
         except httpx.RequestError as e:
             return {"error": f"Request error occurred: {str(e)}"}
+
 
 
 async def get_ng_indices(redis: redis_dependency):

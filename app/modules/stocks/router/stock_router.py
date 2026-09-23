@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from app.core.dependencies import redis_dependency
 from app.modules.stocks.services import stock_services
+from app.modules.stocks.services import chart_history
 from logging import getLogger
 import httpx
+from pydantic import BaseModel
 
 logger = getLogger(__name__)
 logger.info("Stock router initialized.")
@@ -114,6 +116,46 @@ async def get_ng_indices_(redis: redis_dependency):
     """Get stock data from the API"""
     try:
         result = await stock_services.get_ng_indices(redis=redis)
+        return result
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"
+        }
+    except httpx.RequestError as e:
+        return {"error": f"Request error occurred: {str(e)}"}
+
+
+@market_router.get("/ng/companies/profile/{symbol}")
+async def get_company_profile_endpoint(symbol: str, redis: redis_dependency):
+    try:
+        result = await chart_history.get_company_profile(symbol=symbol, redis=redis)
+        return result
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"
+        }
+    except httpx.RequestError as e:
+        return {"error": f"Request error occurred: {str(e)}"}
+
+
+@market_router.get("/ng/companies/chart/{symbol}")
+async def get_company_chart_endpoint(
+    symbol: str,
+    redis: redis_dependency,
+    period: str | None = None,
+    from_date: str | None = Query(default=None, alias="from"),
+    to_date: str | None = Query(default=None, alias="to"),
+):
+    try:
+        result = await chart_history.get_company_chart(
+            symbol=symbol,
+            redis=redis,
+            period=period,
+            from_date=from_date,
+            to_date=to_date,
+        )
         return result
 
     except httpx.HTTPStatusError as e:
