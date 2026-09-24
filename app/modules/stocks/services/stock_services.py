@@ -93,7 +93,6 @@ async def get_ng_stock_data(redis: redis_dependency):
             return {"error": f"Request error occurred: {str(e)}"}
 
 
-
 async def get_ng_indices(redis: redis_dependency):
     result = await redis.get("ng_indices")
     if result:

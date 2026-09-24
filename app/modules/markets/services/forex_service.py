@@ -1,3 +1,4 @@
+import json
 from logging import getLogger
 
 from app.core.dependencies import redis_dependency
@@ -6,15 +7,15 @@ from app.modules.markets.services.av_client import cached_av_get
 import httpx
 from os import getenv
 
-
 logger = getLogger(__name__)
 
 NGN_MARKET_API_URL = getenv("NGN_MARKET_API_URL")
 NGN_MARKET_API_KEY = getenv("NGN_MARKET_API_KEY")
 
 
-
-async def get_forex_rate(redis: redis_dependency, from_currency: str, to_currency: str) -> dict:
+async def get_forex_rate(
+    redis: redis_dependency, from_currency: str, to_currency: str
+) -> dict:
     cache_key = f"forex:{from_currency}_{to_currency}"
     params = {
         "function": "CURRENCY_EXCHANGE_RATE",
@@ -51,29 +52,38 @@ async def get_forex_rates(
         results.append(await get_forex_rate(redis, from_currency, to_currency))
     return results
 
+
 async def get_ngn_forex_pair(redis: redis_dependency) -> dict:
     """
     Fetch the USD/NGN forex pair.
     """
     cached_pairs = await redis.get("forex:NGN:ALL")
     if cached_pairs:
-        return {"target": "NGN", "pairs": cached_pairs}
+        if isinstance(cached_pairs, bytes):
+            cached_pairs = cached_pairs.decode("utf-8")
+        return (
+            json.loads(cached_pairs) if isinstance(cached_pairs, str) else cached_pairs
+        )
 
     async with httpx.AsyncClient() as client:
         try:
-            headers = {
-                "Authorization": f"Bearer {NGN_MARKET_API_KEY}"
-            }
+            headers = {"Authorization": f"Bearer {NGN_MARKET_API_KEY}"}
 
-            response = await client.get(f"{NGN_MARKET_API_URL}/forex/current", headers=headers)
-            response.raise_for_status() 
+            response = await client.get(
+                f"{NGN_MARKET_API_URL}/forex/current", headers=headers
+            )
+            response.raise_for_status()
             raw_data = response.json()
 
-            data = raw_data.get('data')
+            data = raw_data.get("data")
 
-            redis.setex("forex:NGN:ALL", 60, data)
+            if isinstance(data, dict):
+                payload = data
+            else:
+                payload = {"target": "NGN", "rates": data or []}
+            await redis.setex("forex:NGN:ALL", 60, json.dumps(payload))
 
-            return data
+            return payload
 
         except httpx.HTTPStatusError as e:
             return {
@@ -81,8 +91,3 @@ async def get_ngn_forex_pair(redis: redis_dependency) -> dict:
             }
         except httpx.RequestError as e:
             return {"error": f"Request error occurred: {str(e)}"}
-
-
-
-
-

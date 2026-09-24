@@ -117,6 +117,6 @@ async def get_ngn_news(
             )
 
         await redis.setex(
-            "ngn_news:" + category.value, 7 * 24 * 60 * 60, json.dumps(result)
+            "ngn_news:" + category.value, 60 * 60, json.dumps(result)
         )
         return result

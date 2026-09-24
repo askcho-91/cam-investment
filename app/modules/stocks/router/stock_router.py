@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, status
 from app.core.dependencies import redis_dependency
 from app.modules.stocks.services import stock_services
 from app.modules.stocks.services import chart_history
@@ -126,6 +126,32 @@ async def get_ng_indices_(redis: redis_dependency):
         return {"error": f"Request error occurred: {str(e)}"}
 
 
+@market_router.get("/ng/indices/{symbol}/chart")
+async def get_ng_index_chart(
+    symbol: str,
+    redis: redis_dependency,
+    period: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
+    try:
+        result = await chart_history.get_index_chart(
+            symbol=symbol,
+            redis=redis,
+            period=period,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return result
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"
+        }
+    except httpx.RequestError as e:
+        return {"error": f"Request error occurred: {str(e)}"}
+
+
 @market_router.get("/ng/companies/profile/{symbol}")
 async def get_company_profile_endpoint(symbol: str, redis: redis_dependency):
     try:
@@ -145,12 +171,39 @@ async def get_company_chart_endpoint(
     symbol: str,
     redis: redis_dependency,
     period: str | None = None,
-    from_date: str | None = Query(default=None, alias="from"),
-    to_date: str | None = Query(default=None, alias="to"),
+    from_date: str | None = None,
+    to_date: str | None = None,
 ):
     try:
         result = await chart_history.get_company_chart(
             symbol=symbol,
+            redis=redis,
+            period=period,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return result
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "error": f"HTTP error occurred: {e.response.status_code} - {e.response.text}"
+        }
+    except httpx.RequestError as e:
+        return {"error": f"Request error occurred: {str(e)}"}
+
+
+@market_router.get("/ng/forex/{source}")
+async def get_forex_endpoint(
+    source: str,
+    redis: redis_dependency,
+    period: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
+    try:
+        result = await chart_history.get_forex_chart(
+            source=source,
+            target="NGN",
             redis=redis,
             period=period,
             from_date=from_date,
